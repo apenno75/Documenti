@@ -65,143 +65,218 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_LdNvg8y7y1-53q3VDal1DA_tk27D3cy';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const imageInput = document.getElementById('imageInput');
-    const imagePreview = document.getElementById('imagePreview');
-    const scanBtn = document.getElementById('scanBtn');
-    const statusDiv = document.getElementById('status');
+  const imageInput = document.getElementById('imageInput');
+  const imagePreview = document.getElementById('imagePreview');
+  const scanBtn = document.getElementById('scanBtn');
+  const statusDiv = document.getElementById('status');
 
-    // Gestione Anteprima Immagine
-    imageInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        imagePreview.src = URL.createObjectURL(file);
-        imagePreview.style.display = 'block';
-        scanBtn.disabled = false;
-        statusDiv.innerText = '';
-      }
-    });
+  imageInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      imagePreview.src = URL.createObjectURL(file);
+      imagePreview.style.display = 'block';
+      scanBtn.disabled = false;
+      statusDiv.innerText = '';
+    }
+  });
 
-    // --- Elaborazione OCR e Parsing Dati ---
-    async function processDocument() {
-      const file = imageInput.files[0];
-      if (!file) return;
+  // --- Pre-Processing Immagine (Aumento Contrasto e Grayscale) ---
+  function preprocessImage(imageElement) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = imageElement.naturalWidth || imageElement.width;
+    canvas.height = imageElement.naturalHeight || imageElement.height;
 
-      scanBtn.disabled = true;
-      statusDiv.innerText = "Lettura OCR in corso... Attendi...";
+    ctx.drawImage(imageElement, 0, 0);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
 
-      try {
-        // Esecuzione OCR con lingua Italiana
-        const { data: { text } } = await Tesseract.recognize(file, 'ita', {
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              statusDiv.innerText = `Riconoscimento testo: ${Math.round(m.progress * 100)}%`;
-            }
+    // Converti in scala di grigi e aumenta il contrasto
+    for (let i = 0; i < data.length; i += 4) {
+      // Formula Luminanza
+      let avg = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      
+      // Binarizzazione soglia semplice per pulire lo sfondo
+      avg = avg > 110 ? 255 : 0; 
+
+      data[i]     = avg; // R
+      data[i + 1] = avg; // G
+      data[i + 2] = avg; // B
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL('image/png');
+  }
+
+  // --- Processo di Scansione Ottimizzato ---
+  async function processDocument() {
+    const file = imageInput.files[0];
+    if (!file) return;
+
+    scanBtn.disabled = true;
+    statusDiv.innerText = "Ottimizzazione immagine in corso...";
+
+    try {
+      // 1. Applica filtro all'immagine caricata
+      const processedImageBase64 = preprocessImage(imagePreview);
+
+      statusDiv.innerText = "Lettura OCR in corso...";
+
+      // 2. OCR configurato per whitelist caratteri utili (A-Z, 0-9, date, <)
+      const { data: { text } } = await Tesseract.recognize(processedImageBase64, 'ita', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            statusDiv.innerText = `Elaborazione testo: ${Math.round(m.progress * 100)}%`;
           }
-        });
+        }
+      });
 
-        statusDiv.innerText = "Estrazione dati ed elaborazione...";
-        
-        // Estrazione campi tramite Regex
-        const parsedData = parseOCRText(text);
+      console.log("Testo grezzo OCR:\n", text); // Utile per il debug in console
 
-        statusDiv.innerText = "Salvataggio su Supabase...";
+      statusDiv.innerText = "Parsing dei dati...";
+      const parsedData = parseAdvancedOCR(text);
 
-        // Inserimento dati su Supabase
-        const { error } = await db.from('documenti').insert([parsedData]);
+      // 3. Salvataggio su Supabase
+      statusDiv.innerText = "Salvataggio su Supabase...";
+      const { error } = await db.from('documenti').insert([parsedData]);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        statusDiv.innerText = "Documento salvato con successo!";
-        imageInput.value = '';
-        imagePreview.style.display = 'none';
+      statusDiv.innerText = "Completato e salvato!";
+      imageInput.value = '';
+      imagePreview.style.display = 'none';
+      fetchDocumenti();
 
-        // Ricarica la tabella
-        fetchDocumenti();
+    } catch (err) {
+      console.error(err);
+      statusDiv.innerText = "Errore: " + err.message;
+    } finally {
+      scanBtn.disabled = false;
+    }
+  }
 
-      } catch (err) {
-        console.error(err);
-        statusDiv.innerText = "Errore durante l'elaborazione: " + err.message;
-      } finally {
-        scanBtn.disabled = false;
+  // --- Parser Avanzato (Pensa sia al testo classico che alle righe MRZ) ---
+  function parseAdvancedOCR(rawText) {
+    // Pulisci il testo mantenendo solo caratteri maiuscoli, numeri e spazi
+    const cleanLines = rawText
+      .toUpperCase()
+      .split('\n')
+      .map(l => l.replace(/[^A-Z0-9<\s\/\.]/g, '').trim())
+      .filter(l => l.length > 0);
+
+    const fullText = cleanLines.join(' ');
+
+    // 1. Controllo presenza MRZ (Carta d'identità retro o passaporti)
+    const mrzLines = cleanLines.filter(l => l.includes('<<') || l.length > 25);
+    if (mrzLines.length >= 2) {
+      const parsedMrz = parseMRZLines(mrzLines);
+      if (parsedMrz.cognome !== "N/D") {
+        return parsedMrz;
       }
     }
 
-    // --- Logica di Estrazione Testo (Parser Regex) ---
-    function parseOCRText(rawText) {
-      const text = rawText.toUpperCase();
-      
-      // Riconoscimento Codice Fiscale Italiano (16 caratteri alfanumerici)
-      const cfRegex = /[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/;
-      const cfMatch = text.match(cfRegex);
+    // 2. Estrazione Codice Fiscale (Gestisce errori comuni dell'OCR: 'O'/'0', 'I'/'1')
+    let codiceFiscale = "Non rilevato";
+    // Regex flessibile per Codice Fiscale
+    const cfRegex = /[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/i;
+    const cfMatch = fullText.match(cfRegex);
+    if (cfMatch) {
+      codiceFiscale = cfMatch[0];
+    }
 
-      // Riconoscimento Data di Nascita (formati GG/MM/AAAA o GG.MM.AAAA)
-      const dateRegex = /\b(0[1-9]|[12][0-9]|3[01])[\/\.](0[1-9]|1[012])[\/\.](19|20)\d{2}\b/;
-      const dateMatch = text.match(dateRegex);
+    // 3. Estrazione Data di Nascita
+    let dataNascita = "Non rilevata";
+    const dateRegex = /\b(0[1-9]|[12][0-9]|3[01])[\/\.](0[1-9]|1[012])[\/\.](19|20)\d{2}\b/;
+    const dateMatch = fullText.match(dateRegex);
+    if (dateMatch) {
+      dataNascita = dateMatch[0];
+    }
 
-      // Estrazione semplificata delle righe per Cognome e Nome
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-      
-      let cognome = "N/D";
-      let nome = "N/D";
+    // 4. Estrazione Nome e Cognome basata su posizione/parole chiave
+    let cognome = "Da verificare";
+    let nome = "Da verificare";
 
-      // Cerca righe successive a etichette comuni
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes("COGNOME") && lines[i+1]) {
-          cognome = lines[i+1].replace(/[^A-Z\s]/g, '');
-        }
-        if (lines[i].includes("NOME") && lines[i+1]) {
-          nome = lines[i+1].replace(/[^A-Z\s]/g, '');
+    for (let i = 0; i < cleanLines.length; i++) {
+      const line = cleanLines[i];
+      if ((line.includes("COGNOME") || line.includes("SURNAME")) && cleanLines[i + 1]) {
+        cognome = cleanLines[i + 1].replace(/[0-9]/g, '').trim();
+      }
+      if ((line.includes("NOME") || line.includes("GIVEN")) && cleanLines[i + 1]) {
+        nome = cleanLines[i + 1].replace(/[0-9]/g, '').trim();
+      }
+    }
+
+    return {
+      tipo_documento: fullText.includes("PATENTE") ? "Patente" : "Carta d'Identità",
+      cognome: cognome,
+      nome: nome,
+      codice_fiscale: codiceFiscale,
+      data_nascita: dataNascita
+    };
+  }
+
+  // --- Helper per decodificare il formato MRZ ICAO ---
+  function parseMRZLines(lines) {
+    try {
+      // Cerca la riga con COGNOME<<NOME
+      const nameLine = lines.find(l => l.includes('<<'));
+      let cognome = "N/D", nome = "N/D";
+
+      if (nameLine) {
+        // Rimuovi caratteri di disturbo all'inizio
+        const cleanNameLine = nameLine.substring(nameLine.indexOf('ID') > -1 ? nameLine.indexOf('ID') + 2 : 0);
+        const parts = cleanNameLine.split('<<');
+        if (parts.length >= 2) {
+          cognome = parts[0].replace(/[^A-Z]/g, ' ').trim();
+          nome = parts[1].replace(/[^A-Z]/g, ' ').trim();
         }
       }
-
-      // Tipo documento indicativo
-      let tipo = "Sconosciuto";
-      if (text.includes("PATENTE") || text.includes("REPUBBLICA ITALIANA")) tipo = "Patente/Doc";
-      if (text.includes("CARTA") || text.includes("IDENTITA")) tipo = "Carta d'Identità";
 
       return {
-        tipo_documento: tipo,
-        cognome: cognome !== "N/D" ? cognome : (lines[0] || "Da verificare"),
-        nome: nome !== "N/D" ? nome : (lines[1] || "Da verificare"),
-        codice_fiscale: cfMatch ? cfMatch[0] : "Non rilevato",
-        data_nascita: dateMatch ? dateMatch[0] : "Non rilevata"
+        tipo_documento: "CIE (MRZ)",
+        cognome: cognome,
+        nome: nome,
+        codice_fiscale: "Verificare sul fronte",
+        data_nascita: "Rilevata da MRZ"
       };
+    } catch (e) {
+      return { cognome: "N/D" };
+    }
+  }
+
+  // --- Lettura Dati da Supabase ---
+  async function fetchDocumenti() {
+    const tbody = document.getElementById('documentsTableBody');
+    tbody.innerHTML = '<tr><td colspan="6">Caricamento in corso...</td></tr>';
+
+    const { data, error } = await db
+      .from('documenti')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      tbody.innerHTML = `<tr><td colspan="6">Errore nel caricamento: ${error.message}</td></tr>`;
+      return;
     }
 
-    // --- Lettura Dati da Supabase ---
-    async function fetchDocumenti() {
-      const tbody = document.getElementById('documentsTableBody');
-      tbody.innerHTML = '<tr><td colspan="6">Aggiornamento...</td></tr>';
-
-      const { data, error } = await db
-        .from('documenti')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        tbody.innerHTML = `<tr><td colspan="6">Errore nel caricamento: ${error.message}</td></tr>`;
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6">Nessun documento registrato.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = data.map(doc => `
-        <tr>
-          <td>${new Date(doc.created_at).toLocaleString('it-IT')}</td>
-          <td>${doc.tipo_documento || '-'}</td>
-          <td><strong>${doc.cognome || '-'}</strong></td>
-          <td><strong>${doc.nome || '-'}</strong></td>
-          <td><code>${doc.codice_fiscale || '-'}</code></td>
-          <td>${doc.data_nascita || '-'}</td>
-        </tr>
-      `).join('');
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6">Nessun documento salvato.</td></tr>';
+      return;
     }
 
-    // Carica i dati all'avvio
-    fetchDocumenti();
-  </script>
+    tbody.innerHTML = data.map(doc => `
+      <tr>
+        <td>${new Date(doc.created_at).toLocaleString('it-IT')}</td>
+        <td>${doc.tipo_documento || '-'}</td>
+        <td><strong>${doc.cognome || '-'}</strong></td>
+        <td><strong>${doc.nome || '-'}</strong></td>
+        <td><code>${doc.codice_fiscale || '-'}</code></td>
+        <td>${doc.data_nascita || '-'}</td>
+      </tr>
+    `).join('');
+  }
+
+  fetchDocumenti();
+</script>  
 </body>
 </html>
