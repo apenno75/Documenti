@@ -3,54 +3,99 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Scanner Documenti con OCR e Supabase</title>
+  <title>Scanner Documenti con Verifica - Supabase</title>
   
-  <!-- Supabase JS Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Tesseract.js per OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; color: #333; }
-    .card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 20px; background-color: #fafafa; }
-    .btn { background: #0070f3; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; color: #333; background-color: #f4f6f8; }
+    .card { border: 1px solid #e1e4e8; padding: 20px; border-radius: 8px; margin-bottom: 20px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .btn { background: #0070f3; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .btn-success { background: #28a745; }
     .btn:disabled { background: #ccc; cursor: not-allowed; }
+    
+    .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.full-width { grid-column: span 2; }
+    .form-group label { font-size: 12px; font-weight: bold; margin-bottom: 4px; color: #555; text-transform: uppercase; }
+    .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    
     table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-    th, td { border: 1px solid #e0e0e0; padding: 10px; text-align: left; }
-    th { background-color: #f0f0f0; }
-    #status { margin-top: 10px; font-weight: bold; color: #555; }
-    .preview-img { max-width: 300px; max-height: 200px; display: block; margin-top: 10px; border-radius: 4px; }
+    th, td { border: 1px solid #e0e0e0; padding: 10px; text-align: left; font-size: 14px; }
+    th { background-color: #f8f9fa; }
+    #status { margin-top: 10px; font-weight: bold; color: #0070f3; }
+    .preview-img { max-width: 250px; max-height: 180px; display: block; margin-top: 10px; border-radius: 4px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
 
   <h1>Scanner Documenti d'Identità</h1>
 
-  <!-- Sezione Scansione / Input -->
+  <!-- 1. Acquisizione -->
   <div class="card">
-    <h2>1. Acquisisci Documento</h2>
-    <p>Seleziona o fotografa la Carta d'Identità o la Patente:</p>
+    <h2>1. Fotografa o Carica Documento</h2>
     <input type="file" id="imageInput" accept="image/*" capture="environment">
     <br>
     <img id="imagePreview" class="preview-img" style="display:none;" />
     <br>
-    <button id="scanBtn" class="btn" onclick="processDocument()" disabled>Analizza e Salva</button>
+    <button id="scanBtn" class="btn" onclick="processOCR()" disabled>Avvia Scansione OCR</button>
     <div id="status"></div>
   </div>
 
-  <!-- Sezione Tabella Dati -->
+  <!-- 2. Verifica e Modifica Dati Estratti -->
+  <div class="card" id="editorCard">
+    <h2>2. Verifica e Correggi Dati</h2>
+    <p style="font-size: 13px; color: #666;">Controlla i dati letti dall'OCR e correggi eventuali errori prima di salvare.</p>
+    
+    <div class="grid-form">
+      <div class="form-group">
+        <label>Tipo Documento</label>
+        <select id="fieldTipo">
+          <option value="Carta d'Identità">Carta d'Identità</option>
+          <option value="Patente">Patente</option>
+          <option value="Altro">Altro</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Codice Fiscale / Doc N.</label>
+        <input type="text" id="fieldCF" placeholder="Es. RSSMRA80A01H501U">
+      </div>
+
+      <div class="form-group">
+        <label>Cognome</label>
+        <input type="text" id="fieldCognome" placeholder="Es. ROSSI">
+      </div>
+
+      <div class="form-group">
+        <label>Nome</label>
+        <input type="text" id="fieldNome" placeholder="Es. MARIO">
+      </div>
+
+      <div class="form-group full-width">
+        <label>Data di Nascita</label>
+        <input type="text" id="fieldDataNascita" placeholder="Es. 01/01/1980">
+      </div>
+    </div>
+
+    <br>
+    <button id="saveBtn" class="btn btn-success" onclick="saveToSupabase()">Salva Dati su Supabase</button>
+  </div>
+
+  <!-- 3. Tabella Supabase -->
   <div class="card">
-    <h2>2. Documenti Salvati</h2>
-    <button class="btn" onclick="fetchDocumenti()">Aggiorna Tabella</button>
+    <h2>3. Documenti Registrati</h2>
+    <button class="btn" onclick="fetchDocumenti()">Aggiorna Elenco</button>
     <table>
       <thead>
         <tr>
-          <th>Data Inserimento</th>
+          <th>Data Ora</th>
           <th>Tipo</th>
           <th>Cognome</th>
           <th>Nome</th>
-          <th>Codice Fiscale / Doc N.</th>
-          <th>Data di Nascita</th>
+          <th>Codice Fiscale</th>
+          <th>Data Nascita</th>
         </tr>
       </thead>
       <tbody id="documentsTableBody">
@@ -60,223 +105,217 @@
   </div>
 
   <script>
-    // --- Configurazione Supabase ---
+    // Configurazione Supabase
     const SUPABASE_URL = 'https://pnptcdhieyhnmukmfegs.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_LdNvg8y7y1-53q3VDal1DA_tk27D3cy';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  const imageInput = document.getElementById('imageInput');
-  const imagePreview = document.getElementById('imagePreview');
-  const scanBtn = document.getElementById('scanBtn');
-  const statusDiv = document.getElementById('status');
+    const imageInput = document.getElementById('imageInput');
+    const imagePreview = document.getElementById('imagePreview');
+    const scanBtn = document.getElementById('scanBtn');
+    const statusDiv = document.getElementById('status');
 
-  imageInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      imagePreview.src = URL.createObjectURL(file);
-      imagePreview.style.display = 'block';
-      scanBtn.disabled = false;
-      statusDiv.innerText = '';
-    }
-  });
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        imagePreview.src = URL.createObjectURL(file);
+        imagePreview.style.display = 'block';
+        scanBtn.disabled = false;
+        statusDiv.innerText = '';
+      }
+    });
 
-  // --- Pre-Processing Immagine (Aumento Contrasto e Grayscale) ---
-  function preprocessImage(imageElement) {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = imageElement.naturalWidth || imageElement.width;
-    canvas.height = imageElement.naturalHeight || imageElement.height;
+    // Binarizzazione per pulire lo sfondo del documento
+    function preprocessImage(imgEl) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = imgEl.naturalWidth || imgEl.width;
+      canvas.height = imgEl.naturalHeight || imgEl.height;
 
-    ctx.drawImage(imageElement, 0, 0);
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
+      ctx.drawImage(imgEl, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
 
-    // Converti in scala di grigi e aumenta il contrasto
-    for (let i = 0; i < data.length; i += 4) {
-      // Formula Luminanza
-      let avg = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-      
-      // Binarizzazione soglia semplice per pulire lo sfondo
-      avg = avg > 110 ? 255 : 0; 
+      for (let i = 0; i < data.length; i += 4) {
+        let avg = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+        avg = avg > 115 ? 255 : 0; // Aumenta il contrasto del testo
+        data[i] = data[i + 1] = data[i + 2] = avg;
+      }
 
-      data[i]     = avg; // R
-      data[i + 1] = avg; // G
-      data[i + 2] = avg; // B
+      ctx.putImageData(imgData, 0, 0);
+      return canvas.toDataURL('image/png');
     }
 
-    ctx.putImageData(imgData, 0, 0);
-    return canvas.toDataURL('image/png');
-  }
+    // Processo OCR
+    async function processOCR() {
+      const file = imageInput.files[0];
+      if (!file) return;
 
-  // --- Processo di Scansione Ottimizzato ---
-  async function processDocument() {
-    const file = imageInput.files[0];
-    if (!file) return;
+      scanBtn.disabled = true;
+      statusDiv.innerText = "Ottimizzazione immagine...";
 
-    scanBtn.disabled = true;
-    statusDiv.innerText = "Ottimizzazione immagine in corso...";
+      try {
+        const processedBase64 = preprocessImage(imagePreview);
+        statusDiv.innerText = "Lettura testo con Tesseract OCR...";
 
-    try {
-      // 1. Applica filtro all'immagine caricata
-      const processedImageBase64 = preprocessImage(imagePreview);
+        const { data: { text } } = await Tesseract.recognize(processedBase64, 'ita', {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              statusDiv.innerText = `Riconoscimento: ${Math.round(m.progress * 100)}%`;
+            }
+          }
+        });
 
-      statusDiv.innerText = "Lettura OCR in corso...";
+        console.log("Testo grezzo letto dall'OCR:\n", text);
+        statusDiv.innerText = "Compilazione campi...";
 
-      // 2. OCR configurato per whitelist caratteri utili (A-Z, 0-9, date, <)
-      const { data: { text } } = await Tesseract.recognize(processedImageBase64, 'ita', {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            statusDiv.innerText = `Elaborazione testo: ${Math.round(m.progress * 100)}%`;
+        // Estrazione con algoritmo migliorato per Cognome
+        parseAndFillFields(text);
+
+        statusDiv.innerText = "Analisi completata. Verifica i campi qui sotto e clicca 'Salva'.";
+
+      } catch (err) {
+        console.error(err);
+        statusDiv.innerText = "Errore OCR: " + err.message;
+      } finally {
+        scanBtn.disabled = false;
+      }
+    }
+
+    // Estrazione dati migliorata
+    function parseAndFillFields(rawText) {
+      const cleanLines = rawText
+        .toUpperCase()
+        .split('\n')
+        .map(l => l.replace(/[^A-Z0-9<\s\/\.]/g, '').trim())
+        .filter(l => l.length > 1);
+
+      const fullText = cleanLines.join(' ');
+
+      // 1. Codice Fiscale
+      const cfRegex = /[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/i;
+      const cfMatch = fullText.match(cfRegex);
+      document.getElementById('fieldCF').value = cfMatch ? cfMatch[0] : '';
+
+      // 2. Data di Nascita
+      const dateRegex = /\b(0[1-9]|[12][0-9]|3[01])[\/\.](0[1-9]|1[012])[\/\.](19|20)\d{2}\b/;
+      const dateMatch = fullText.match(dateRegex);
+      document.getElementById('fieldDataNascita').value = dateMatch ? dateMatch[0] : '';
+
+      // 3. Algoritmo dedicato per Cognome e Nome
+      let cognome = '';
+      let nome = '';
+
+      for (let i = 0; i < cleanLines.length; i++) {
+        const line = cleanLines[i];
+
+        // Cerca keyword COGNOME o varianti OCR comuni (es. OGNOME, COGN)
+        if (line.includes('COGN') || line.includes('SURNAME') || line.includes('OGNOME')) {
+          // Se la parola COGNOME e il valore sono sulla stessa riga (es. "COGNOME ROSSI")
+          const inlineVal = line.replace(/.*(COGNOME|SURNAME|OGNOME|COGN)/, '').trim();
+          if (inlineVal.length > 2) {
+            cognome = inlineVal;
+          } else if (cleanLines[i + 1]) {
+            // Altrimenti prende la riga successiva
+            cognome = cleanLines[i + 1];
           }
         }
-      });
 
-      console.log("Testo grezzo OCR:\n", text); // Utile per il debug in console
-
-      statusDiv.innerText = "Parsing dei dati...";
-      const parsedData = parseAdvancedOCR(text);
-
-      // 3. Salvataggio su Supabase
-      statusDiv.innerText = "Salvataggio su Supabase...";
-      const { error } = await db.from('documenti').insert([parsedData]);
-
-      if (error) throw error;
-
-      statusDiv.innerText = "Completato e salvato!";
-      imageInput.value = '';
-      imagePreview.style.display = 'none';
-      fetchDocumenti();
-
-    } catch (err) {
-      console.error(err);
-      statusDiv.innerText = "Errore: " + err.message;
-    } finally {
-      scanBtn.disabled = false;
-    }
-  }
-
-  // --- Parser Avanzato (Pensa sia al testo classico che alle righe MRZ) ---
-  function parseAdvancedOCR(rawText) {
-    // Pulisci il testo mantenendo solo caratteri maiuscoli, numeri e spazi
-    const cleanLines = rawText
-      .toUpperCase()
-      .split('\n')
-      .map(l => l.replace(/[^A-Z0-9<\s\/\.]/g, '').trim())
-      .filter(l => l.length > 0);
-
-    const fullText = cleanLines.join(' ');
-
-    // 1. Controllo presenza MRZ (Carta d'identità retro o passaporti)
-    const mrzLines = cleanLines.filter(l => l.includes('<<') || l.length > 25);
-    if (mrzLines.length >= 2) {
-      const parsedMrz = parseMRZLines(mrzLines);
-      if (parsedMrz.cognome !== "N/D") {
-        return parsedMrz;
-      }
-    }
-
-    // 2. Estrazione Codice Fiscale (Gestisce errori comuni dell'OCR: 'O'/'0', 'I'/'1')
-    let codiceFiscale = "Non rilevato";
-    // Regex flessibile per Codice Fiscale
-    const cfRegex = /[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/i;
-    const cfMatch = fullText.match(cfRegex);
-    if (cfMatch) {
-      codiceFiscale = cfMatch[0];
-    }
-
-    // 3. Estrazione Data di Nascita
-    let dataNascita = "Non rilevata";
-    const dateRegex = /\b(0[1-9]|[12][0-9]|3[01])[\/\.](0[1-9]|1[012])[\/\.](19|20)\d{2}\b/;
-    const dateMatch = fullText.match(dateRegex);
-    if (dateMatch) {
-      dataNascita = dateMatch[0];
-    }
-
-    // 4. Estrazione Nome e Cognome basata su posizione/parole chiave
-    let cognome = "Da verificare";
-    let nome = "Da verificare";
-
-    for (let i = 0; i < cleanLines.length; i++) {
-      const line = cleanLines[i];
-      if ((line.includes("COGNOME") || line.includes("SURNAME")) && cleanLines[i + 1]) {
-        cognome = cleanLines[i + 1].replace(/[0-9]/g, '').trim();
-      }
-      if ((line.includes("NOME") || line.includes("GIVEN")) && cleanLines[i + 1]) {
-        nome = cleanLines[i + 1].replace(/[0-9]/g, '').trim();
-      }
-    }
-
-    return {
-      tipo_documento: fullText.includes("PATENTE") ? "Patente" : "Carta d'Identità",
-      cognome: cognome,
-      nome: nome,
-      codice_fiscale: codiceFiscale,
-      data_nascita: dataNascita
-    };
-  }
-
-  // --- Helper per decodificare il formato MRZ ICAO ---
-  function parseMRZLines(lines) {
-    try {
-      // Cerca la riga con COGNOME<<NOME
-      const nameLine = lines.find(l => l.includes('<<'));
-      let cognome = "N/D", nome = "N/D";
-
-      if (nameLine) {
-        // Rimuovi caratteri di disturbo all'inizio
-        const cleanNameLine = nameLine.substring(nameLine.indexOf('ID') > -1 ? nameLine.indexOf('ID') + 2 : 0);
-        const parts = cleanNameLine.split('<<');
-        if (parts.length >= 2) {
-          cognome = parts[0].replace(/[^A-Z]/g, ' ').trim();
-          nome = parts[1].replace(/[^A-Z]/g, ' ').trim();
+        // Cerca keyword NOME
+        if ((line.includes('NOME') || line.includes('GIVEN')) && !line.includes('COGNOME')) {
+          const inlineVal = line.replace(/.*(NOME|GIVEN)/, '').trim();
+          if (inlineVal.length > 2) {
+            nome = inlineVal;
+          } else if (cleanLines[i + 1]) {
+            nome = cleanLines[i + 1];
+          }
         }
       }
 
-      return {
-        tipo_documento: "CIE (MRZ)",
-        cognome: cognome,
-        nome: nome,
-        codice_fiscale: "Verificare sul fronte",
-        data_nascita: "Rilevata da MRZ"
+      // Fallback: Se il Cognome non è stato trovato con le keyword, usa l'ordine sequenziale
+      // Nei documenti italiani il Cognome precede sempre il Nome
+      if (!cognome && nome) {
+        // Cerca la prima riga composta solo da lettere che precede il nome
+        const validTextLines = cleanLines.filter(l => /^[A-Z\s]{3,}$/.test(l) && !l.includes('REPUBBLICA') && !l.includes('ITALIANA') && !l.includes('CARTA'));
+        if (validTextLines.length >= 2) {
+          cognome = validTextLines[0];
+        }
+      }
+
+      document.getElementById('fieldCognome').value = cognome.replace(/[0-9]/g, '').trim();
+      document.getElementById('fieldNome').value = nome.replace(/[0-9]/g, '').trim();
+
+      // Tipo documento
+      if (fullText.includes('PATENTE')) {
+        document.getElementById('fieldTipo').value = 'Patente';
+      } else {
+        document.getElementById('fieldTipo').value = "Carta d'Identità";
+      }
+    }
+
+    // Salva i dati verificati su Supabase
+    async function saveToSupabase() {
+      const payload = {
+        tipo_documento: document.getElementById('fieldTipo').value,
+        cognome: document.getElementById('fieldCognome').value || 'N/D',
+        nome: document.getElementById('fieldNome').value || 'N/D',
+        codice_fiscale: document.getElementById('fieldCF').value || 'N/D',
+        data_nascita: document.getElementById('fieldDataNascita').value || 'N/D'
       };
-    } catch (e) {
-      return { cognome: "N/D" };
-    }
-  }
 
-  // --- Lettura Dati da Supabase ---
-  async function fetchDocumenti() {
-    const tbody = document.getElementById('documentsTableBody');
-    tbody.innerHTML = '<tr><td colspan="6">Caricamento in corso...</td></tr>';
+      statusDiv.innerText = "Salvataggio in corso...";
 
-    const { data, error } = await db
-      .from('documenti')
-      .select('*')
-      .order('created_at', { ascending: false });
+      const { error } = await db.from('documenti').insert([payload]);
 
-    if (error) {
-      tbody.innerHTML = `<tr><td colspan="6">Errore nel caricamento: ${error.message}</td></tr>`;
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6">Nessun documento salvato.</td></tr>';
-      return;
+      if (error) {
+        statusDiv.innerText = "Errore salvataggio: " + error.message;
+      } else {
+        statusDiv.innerText = "Documento salvato con successo!";
+        // Pulisci i campi
+        document.getElementById('fieldCognome').value = '';
+        document.getElementById('fieldNome').value = '';
+        document.getElementById('fieldCF').value = '';
+        document.getElementById('fieldDataNascita').value = '';
+        imageInput.value = '';
+        imagePreview.style.display = 'none';
+        
+        fetchDocumenti();
+      }
     }
 
-    tbody.innerHTML = data.map(doc => `
-      <tr>
-        <td>${new Date(doc.created_at).toLocaleString('it-IT')}</td>
-        <td>${doc.tipo_documento || '-'}</td>
-        <td><strong>${doc.cognome || '-'}</strong></td>
-        <td><strong>${doc.nome || '-'}</strong></td>
-        <td><code>${doc.codice_fiscale || '-'}</code></td>
-        <td>${doc.data_nascita || '-'}</td>
-      </tr>
-    `).join('');
-  }
+    // Caricamento Dati
+    async function fetchDocumenti() {
+      const tbody = document.getElementById('documentsTableBody');
+      tbody.innerHTML = '<tr><td colspan="6">Aggiornamento...</td></tr>';
 
-  fetchDocumenti();
-</script>  
+      const { data, error } = await db
+        .from('documenti')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        tbody.innerHTML = `<tr><td colspan="6">Errore: ${error.message}</td></tr>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6">Nessun documento in archivio.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.map(doc => `
+        <tr>
+          <td>${new Date(doc.created_at).toLocaleString('it-IT')}</td>
+          <td>${doc.tipo_documento || '-'}</td>
+          <td><strong>${doc.cognome || '-'}</strong></td>
+          <td><strong>${doc.nome || '-'}</strong></td>
+          <td><code>${doc.codice_fiscale || '-'}</code></td>
+          <td>${doc.data_nascita || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    fetchDocumenti();
+  </script>
 </body>
 </html>
