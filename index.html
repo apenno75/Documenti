@@ -4,24 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Scanner Documenti Professionale</title>
-  
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 20px auto; padding: 15px; background: #f4f7f6; }
+    body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 15px; background: #f4f7f6; }
     .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
     .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .full { grid-column: span 2; }
     .form-group { display: flex; flex-direction: column; }
-    label { font-size: 12px; font-weight: bold; color: #666; margin-bottom: 5px; text-transform: uppercase; }
-    input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
-    .btn { background: #0070f3; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
-    .btn-save { background: #28a745; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+    label { font-size: 11px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 4px; }
+    input, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    .btn { padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+    .btn-primary { background: #0070f3; color: white; }
+    .btn-success { background: #28a745; color: white; margin-top: 20px; font-size: 16px; }
+    .btn-danger { background: #dc3545; color: white; padding: 5px 10px; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
     th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
-    #status { padding: 10px; text-align: center; font-weight: bold; color: #333; }
-    .preview-img { max-width: 100%; height: auto; border-radius: 8px; margin-top: 10px; display: none; }
+    .preview-img { max-width: 150px; display: none; margin: 10px 0; }
   </style>
 </head>
 <body>
@@ -31,12 +30,12 @@
   <div class="card">
     <input type="file" id="imageInput" accept="image/*" capture="environment">
     <img id="imagePreview" class="preview-img">
-    <button class="btn" id="scanBtn" onclick="processOCR()" disabled>Avvia Scansione OCR</button>
-    <div id="status"></div>
+    <button class="btn btn-primary" id="scanBtn" onclick="processOCR()" disabled>1. Avvia Scansione (OCR)</button>
+    <div id="status" style="margin-top:10px; font-weight:bold;"></div>
   </div>
 
   <div class="card">
-    <h3>Verifica Dati</h3>
+    <h3>2. Verifica e Modifica</h3>
     <div class="grid-form">
       <div class="form-group"><label>Tipo</label><select id="fieldTipo"><option>Carta d'Identità</option><option>Patente</option></select></div>
       <div class="form-group"><label>Codice Fiscale</label><input type="text" id="fieldCF"></div>
@@ -46,78 +45,57 @@
       <div class="form-group"><label>Data Nascita</label><input type="text" id="fieldDataNascita"></div>
       <div class="form-group full"><label>Luogo Nascita</label><input type="text" id="fieldLuogoNascita"></div>
     </div>
-    <button class="btn btn-save" onclick="saveToSupabase()">Salva nel Database</button>
+    <button class="btn btn-success" onclick="saveToSupabase()">3. SALVA DOCUMENTO</button>
   </div>
 
   <div class="card">
-    <h3>Ultimi Documenti</h3>
+    <h3>Archivio</h3>
     <table>
-      <thead><tr><th>Nome</th><th>CF</th><th>Sesso</th><th>Nascita</th></tr></thead>
+      <thead><tr><th>Nome</th><th>Luogo</th><th>Azioni</th></tr></thead>
       <tbody id="tableBody"></tbody>
     </table>
   </div>
 
   <script>
-        // Configurazione Supabase
+    
     const SUPABASE_URL = 'https://pnptcdhieyhnmukmfegs.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_LdNvg8y7y1-53q3VDal1DA_tk27D3cy';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // --- Gestione Immagine ---
     document.getElementById('imageInput').onchange = (e) => {
-      const img = document.getElementById('imagePreview');
-      img.src = URL.createObjectURL(e.target.files[0]);
-      img.style.display = 'block';
+      document.getElementById('imagePreview').src = URL.createObjectURL(e.target.files[0]);
+      document.getElementById('imagePreview').style.display = 'block';
       document.getElementById('scanBtn').disabled = false;
     };
 
-    // --- OCR e Parsing ---
     async function processOCR() {
       const file = document.getElementById('imageInput').files[0];
-      const status = document.getElementById('status');
-      status.innerText = "Analisi in corso...";
-      
+      document.getElementById('status').innerText = "OCR in corso...";
       const { data: { text } } = await Tesseract.recognize(file, 'ita');
       parseData(text);
-      status.innerText = "Scansione terminata. Verifica i dati.";
+      document.getElementById('status').innerText = "Scansione completata. Controlla i dati prima di salvare.";
     }
 
     function parseData(text) {
-      const lines = text.toUpperCase().split('\n');
+      const lines = text.toUpperCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
       const full = lines.join(' ');
 
-      // CF
-      const cfMatch = full.match(/[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/);
-      const cf = cfMatch ? cfMatch[0] : "";
-      document.getElementById('fieldCF').value = cf;
-
-      // Data Nascita
-      const dateMatch = full.match(/\d{2}[\/\.]\d{2}[\/\.]\d{4}/);
-      document.getElementById('fieldDataNascita').value = dateMatch ? dateMatch[0] : "";
-
-      // Sesso (Logica CF)
-      if(cf) {
-        const giorno = parseInt(cf.substring(9, 11));
-        document.getElementById('fieldSesso').value = giorno > 40 ? 'F' : 'M';
-      }
-
-      // Luogo Nascita (Ricerca per parole chiave)
-      let luogo = "";
+      // Estrazione intelligente
+      document.getElementById('fieldCF').value = (full.match(/[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/) || [""])[0];
+      document.getElementById('fieldDataNascita').value = (full.match(/\d{2}[\/\.]\d{2}[\/\.]\d{4}/) || [""])[0];
+      
+      // Logica Luogo di Nascita migliorata
       lines.forEach((l, i) => {
-        if(l.includes("LUOGO") || l.includes("COMUNE")) {
-          luogo = l.replace(/(LUOGO|COMUNE|DI|NASCITA)/g, "").trim();
+        if(l.includes("NASCITA")) {
+          // Se la riga contiene "NASCITA", prendi il resto della riga o la riga successiva
+          const textAfter = l.replace(/.*NASCITA\s*(A|DI)?/i, "").trim();
+          document.getElementById('fieldLuogoNascita').value = textAfter.length > 3 ? textAfter : (lines[i+1] || "");
         }
-      });
-      document.getElementById('fieldLuogoNascita').value = luogo;
-
-      // Nome/Cognome
-      lines.forEach((l, i) => {
         if(l.includes("COGNOME")) document.getElementById('fieldCognome').value = lines[i+1] || "";
         if(l.includes("NOME")) document.getElementById('fieldNome').value = lines[i+1] || "";
       });
     }
 
-    // --- Salvataggio ---
     async function saveToSupabase() {
       const payload = {
         tipo_documento: document.getElementById('fieldTipo').value,
@@ -130,18 +108,25 @@
       };
 
       const { error } = await db.from('documenti').insert([payload]);
-      if(error) alert(error.message);
-      else {
-        alert("Salvato!");
-        fetchData();
-      }
+      if(error) alert("Errore: " + error.message);
+      else { alert("Salvato!"); fetchData(); }
     }
 
-    // --- Caricamento Tabella ---
+    async function deleteDoc(id) {
+      if(!confirm("Vuoi eliminare questo documento?")) return;
+      const { error } = await db.from('documenti').delete().eq('id', id);
+      if(error) alert("Errore: " + error.message);
+      else fetchData();
+    }
+
     async function fetchData() {
       const { data } = await db.from('documenti').select('*').order('created_at', { ascending: false });
       document.getElementById('tableBody').innerHTML = data.map(d => `
-        <tr><td>${d.cognome} ${d.nome}</td><td>${d.codice_fiscale}</td><td>${d.sesso}</td><td>${d.data_nascita}</td></tr>
+        <tr>
+          <td>${d.cognome} ${d.nome}</td>
+          <td>${d.luogo_nascita}</td>
+          <td><button class="btn-danger" onclick="deleteDoc(${d.id})">Elimina</button></td>
+        </tr>
       `).join('');
     }
 
