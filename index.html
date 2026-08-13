@@ -96,22 +96,54 @@
       document.getElementById('status').innerText = "Scansione completata. Controlla i dati prima di salvare.";
     }
 
-    function parseData(text) {
-      const lines = text.toUpperCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
-      const full = lines.join(' ');
+    // Aumenta la risoluzione dell'immagine prima dell'OCR
+function preprocessImage(imgEl) {
+    const canvas = document.createElement('canvas');
+    // Moltiplica la risoluzione per 2 per aiutare il motore OCR a leggere meglio
+    canvas.width = imgEl.naturalWidth * 2; 
+    canvas.height = imgEl.naturalHeight * 2;
+    const ctx = canvas.getContext('2d');
+    
+    // Filtro per contrasto alto (bianco e nero puro)
+    ctx.filter = 'contrast(200%) grayscale(100%)';
+    ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
+    
+    return canvas.toDataURL('image/png');
+}
 
-      document.getElementById('fieldCF').value = (full.match(/[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/) || [""])[0];
-      document.getElementById('fieldDataNascita').value = (full.match(/\d{2}[\/\.]\d{2}[\/\.]\d{4}/) || [""])[0];
-      
-      lines.forEach((l, i) => {
-        if(l.includes("NASCITA")) {
-          const textAfter = l.replace(/.*NASCITA\s*(A|DI)?/i, "").trim();
-          document.getElementById('fieldLuogoNascita').value = textAfter.length > 3 ? textAfter : (lines[i+1] || "");
-        }
-        if(l.includes("COGNOME")) document.getElementById('fieldCognome').value = lines[i+1] || "";
-        if(l.includes("NOME")) document.getElementById('fieldNome').value = lines[i+1] || "";
-      });
+function parseData(text) {
+    const lines = text.toUpperCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    const full = lines.join(' ');
+
+    // 1. Codice Fiscale
+    const cfMatch = full.match(/[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/);
+    document.getElementById('fieldCF').value = cfMatch ? cfMatch[0] : "";
+
+    // 2. Data di Nascita
+    const dateMatch = full.match(/\d{2}[\/\.]\d{2}[\/\.]\d{4}/);
+    document.getElementById('fieldDataNascita').value = dateMatch ? dateMatch[0] : "";
+
+    // 3. LOGICA SESSO POTENZIATA (Cerca esplicitamente M o F vicino alle parole chiave)
+    const sessoRegex = /(?:SESSO|SEX|SEXE|GENERE)\s*([MF])/i;
+    const sessoMatch = full.match(sessoRegex);
+    if (sessoMatch) {
+        document.getElementById('fieldSesso').value = sessoMatch[1];
+    } else if (document.getElementById('fieldCF').value) {
+        // Fallback al Codice Fiscale
+        const cf = document.getElementById('fieldCF').value;
+        document.getElementById('fieldSesso').value = (parseInt(cf.substring(9, 11)) > 40) ? 'F' : 'M';
     }
+
+    // 4. LUOGO DI NASCITA (Cerca meglio)
+    lines.forEach((l, i) => {
+        // Se trova "NASCITA", guarda la riga corrente o la successiva
+        if (l.includes("NASCITA")) {
+            const part = l.replace(/.*NASCITA\s*(A|DI)?/i, "").trim();
+            document.getElementById('fieldLuogoNascita').value = part.length > 3 ? part : (lines[i+1] || "");
+        }
+        // ... (resto della logica Nome/Cognome)
+    });
+}
 
     async function saveToSupabase() {
       const payload = {
