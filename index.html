@@ -3,319 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Scanner Documenti con Verifica - Supabase</title>
+  <title>Scanner Documenti Professionale</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; color: #333; background-color: #f4f6f8; }
-    .card { border: 1px solid #e1e4e8; padding: 20px; border-radius: 8px; margin-bottom: 20px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .btn { background: #0070f3; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
-    .btn-success { background: #28a745; }
-    .btn:disabled { background: #ccc; cursor: not-allowed; }
-    
-    .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 20px auto; padding: 15px; background: #f4f7f6; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .full { grid-column: span 2; }
     .form-group { display: flex; flex-direction: column; }
-    .form-group.full-width { grid-column: span 2; }
-    .form-group label { font-size: 12px; font-weight: bold; margin-bottom: 4px; color: #555; text-transform: uppercase; }
-    .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-    
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-    th, td { border: 1px solid #e0e0e0; padding: 10px; text-align: left; font-size: 14px; }
-    th { background-color: #f8f9fa; }
-    #status { margin-top: 10px; font-weight: bold; color: #0070f3; }
-    .preview-img { max-width: 250px; max-height: 180px; display: block; margin-top: 10px; border-radius: 4px; border: 1px solid #ccc; }
+    label { font-size: 12px; font-weight: bold; color: #666; margin-bottom: 5px; text-transform: uppercase; }
+    input, select { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    .btn { background: #0070f3; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+    .btn-save { background: #28a745; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+    #status { padding: 10px; text-align: center; font-weight: bold; color: #333; }
+    .preview-img { max-width: 100%; height: auto; border-radius: 8px; margin-top: 10px; display: none; }
   </style>
 </head>
 <body>
 
-  <h1>Scanner Documenti d'Identità</h1>
+  <h2>Scanner Documenti</h2>
 
-  <!-- 1. Acquisizione -->
   <div class="card">
-    <h2>1. Fotografa o Carica Documento</h2>
     <input type="file" id="imageInput" accept="image/*" capture="environment">
-    <br>
-    <img id="imagePreview" class="preview-img" style="display:none;" />
-    <br>
-    <button id="scanBtn" class="btn" onclick="processOCR()" disabled>Avvia Scansione OCR</button>
+    <img id="imagePreview" class="preview-img">
+    <button class="btn" id="scanBtn" onclick="processOCR()" disabled>Avvia Scansione OCR</button>
     <div id="status"></div>
   </div>
 
-  <!-- 2. Verifica e Modifica Dati Estratti -->
-  <div class="card" id="editorCard">
-    <h2>2. Verifica e Correggi Dati</h2>
-    <p style="font-size: 13px; color: #666;">Controlla i dati letti dall'OCR e correggi eventuali errori prima di salvare.</p>
-    
+  <div class="card">
+    <h3>Verifica Dati</h3>
     <div class="grid-form">
-      <div class="form-group">
-        <label>Tipo Documento</label>
-        <select id="fieldTipo">
-          <option value="Carta d'Identità">Carta d'Identità</option>
-          <option value="Patente">Patente</option>
-          <option value="Altro">Altro</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Codice Fiscale / Doc N.</label>
-        <input type="text" id="fieldCF" placeholder="Es. RSSMRA80A01H501U">
-      </div>
-
-      <div class="form-group">
-        <label>Cognome</label>
-        <input type="text" id="fieldCognome" placeholder="Es. ROSSI">
-      </div>
-
-      <div class="form-group">
-        <label>Nome</label>
-        <input type="text" id="fieldNome" placeholder="Es. MARIO">
-      </div>
-
-      <div class="form-group full-width">
-        <label>Data di Nascita</label>
-        <input type="text" id="fieldDataNascita" placeholder="Es. 01/01/1980">
-      </div>
+      <div class="form-group"><label>Tipo</label><select id="fieldTipo"><option>Carta d'Identità</option><option>Patente</option></select></div>
+      <div class="form-group"><label>Codice Fiscale</label><input type="text" id="fieldCF"></div>
+      <div class="form-group"><label>Cognome</label><input type="text" id="fieldCognome"></div>
+      <div class="form-group"><label>Nome</label><input type="text" id="fieldNome"></div>
+      <div class="form-group"><label>Sesso</label><select id="fieldSesso"><option>M</option><option>F</option></select></div>
+      <div class="form-group"><label>Data Nascita</label><input type="text" id="fieldDataNascita"></div>
+      <div class="form-group full"><label>Luogo Nascita</label><input type="text" id="fieldLuogoNascita"></div>
     </div>
-
-    <br>
-    <button id="saveBtn" class="btn btn-success" onclick="saveToSupabase()">Salva Dati su Supabase</button>
+    <button class="btn btn-save" onclick="saveToSupabase()">Salva nel Database</button>
   </div>
 
-  <!-- 3. Tabella Supabase -->
   <div class="card">
-    <h2>3. Documenti Registrati</h2>
-    <button class="btn" onclick="fetchDocumenti()">Aggiorna Elenco</button>
+    <h3>Ultimi Documenti</h3>
     <table>
-      <thead>
-        <tr>
-          <th>Data Ora</th>
-          <th>Tipo</th>
-          <th>Cognome</th>
-          <th>Nome</th>
-          <th>Codice Fiscale</th>
-          <th>Data Nascita</th>
-        </tr>
-      </thead>
-      <tbody id="documentsTableBody">
-        <tr><td colspan="6">Caricamento in corso...</td></tr>
-      </tbody>
+      <thead><tr><th>Nome</th><th>CF</th><th>Sesso</th><th>Nascita</th></tr></thead>
+      <tbody id="tableBody"></tbody>
     </table>
   </div>
 
   <script>
-    // Configurazione Supabase
+        // Configurazione Supabase
     const SUPABASE_URL = 'https://pnptcdhieyhnmukmfegs.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_LdNvg8y7y1-53q3VDal1DA_tk27D3cy';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const imageInput = document.getElementById('imageInput');
-    const imagePreview = document.getElementById('imagePreview');
-    const scanBtn = document.getElementById('scanBtn');
-    const statusDiv = document.getElementById('status');
+    // --- Gestione Immagine ---
+    document.getElementById('imageInput').onchange = (e) => {
+      const img = document.getElementById('imagePreview');
+      img.src = URL.createObjectURL(e.target.files[0]);
+      img.style.display = 'block';
+      document.getElementById('scanBtn').disabled = false;
+    };
 
-    imageInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        imagePreview.src = URL.createObjectURL(file);
-        imagePreview.style.display = 'block';
-        scanBtn.disabled = false;
-        statusDiv.innerText = '';
-      }
-    });
-
-    // Binarizzazione per pulire lo sfondo del documento
-    function preprocessImage(imgEl) {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      canvas.width = imgEl.naturalWidth || imgEl.width;
-      canvas.height = imgEl.naturalHeight || imgEl.height;
-
-      ctx.drawImage(imgEl, 0, 0);
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imgData.data;
-
-      for (let i = 0; i < data.length; i += 4) {
-        let avg = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-        avg = avg > 115 ? 255 : 0; // Aumenta il contrasto del testo
-        data[i] = data[i + 1] = data[i + 2] = avg;
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-      return canvas.toDataURL('image/png');
-    }
-
-    // Processo OCR
+    // --- OCR e Parsing ---
     async function processOCR() {
-      const file = imageInput.files[0];
-      if (!file) return;
-
-      scanBtn.disabled = true;
-      statusDiv.innerText = "Ottimizzazione immagine...";
-
-      try {
-        const processedBase64 = preprocessImage(imagePreview);
-        statusDiv.innerText = "Lettura testo con Tesseract OCR...";
-
-        const { data: { text } } = await Tesseract.recognize(processedBase64, 'ita', {
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              statusDiv.innerText = `Riconoscimento: ${Math.round(m.progress * 100)}%`;
-            }
-          }
-        });
-
-        console.log("Testo grezzo letto dall'OCR:\n", text);
-        statusDiv.innerText = "Compilazione campi...";
-
-        // Estrazione con algoritmo migliorato per Cognome
-        parseAndFillFields(text);
-
-        statusDiv.innerText = "Analisi completata. Verifica i campi qui sotto e clicca 'Salva'.";
-
-      } catch (err) {
-        console.error(err);
-        statusDiv.innerText = "Errore OCR: " + err.message;
-      } finally {
-        scanBtn.disabled = false;
-      }
+      const file = document.getElementById('imageInput').files[0];
+      const status = document.getElementById('status');
+      status.innerText = "Analisi in corso...";
+      
+      const { data: { text } } = await Tesseract.recognize(file, 'ita');
+      parseData(text);
+      status.innerText = "Scansione terminata. Verifica i dati.";
     }
 
-    // Estrazione dati migliorata
-    function parseAndFillFields(rawText) {
-      const cleanLines = rawText
-        .toUpperCase()
-        .split('\n')
-        .map(l => l.replace(/[^A-Z0-9<\s\/\.]/g, '').trim())
-        .filter(l => l.length > 1);
+    function parseData(text) {
+      const lines = text.toUpperCase().split('\n');
+      const full = lines.join(' ');
 
-      const fullText = cleanLines.join(' ');
+      // CF
+      const cfMatch = full.match(/[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/);
+      const cf = cfMatch ? cfMatch[0] : "";
+      document.getElementById('fieldCF').value = cf;
 
-      // 1. Codice Fiscale
-      const cfRegex = /[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/i;
-      const cfMatch = fullText.match(cfRegex);
-      document.getElementById('fieldCF').value = cfMatch ? cfMatch[0] : '';
+      // Data Nascita
+      const dateMatch = full.match(/\d{2}[\/\.]\d{2}[\/\.]\d{4}/);
+      document.getElementById('fieldDataNascita').value = dateMatch ? dateMatch[0] : "";
 
-      // 2. Data di Nascita
-      const dateRegex = /\b(0[1-9]|[12][0-9]|3[01])[\/\.](0[1-9]|1[012])[\/\.](19|20)\d{2}\b/;
-      const dateMatch = fullText.match(dateRegex);
-      document.getElementById('fieldDataNascita').value = dateMatch ? dateMatch[0] : '';
-
-      // 3. Algoritmo dedicato per Cognome e Nome
-      let cognome = '';
-      let nome = '';
-
-      for (let i = 0; i < cleanLines.length; i++) {
-        const line = cleanLines[i];
-
-        // Cerca keyword COGNOME o varianti OCR comuni (es. OGNOME, COGN)
-        if (line.includes('COGN') || line.includes('SURNAME') || line.includes('OGNOME')) {
-          // Se la parola COGNOME e il valore sono sulla stessa riga (es. "COGNOME ROSSI")
-          const inlineVal = line.replace(/.*(COGNOME|SURNAME|OGNOME|COGN)/, '').trim();
-          if (inlineVal.length > 2) {
-            cognome = inlineVal;
-          } else if (cleanLines[i + 1]) {
-            // Altrimenti prende la riga successiva
-            cognome = cleanLines[i + 1];
-          }
-        }
-
-        // Cerca keyword NOME
-        if ((line.includes('NOME') || line.includes('GIVEN')) && !line.includes('COGNOME')) {
-          const inlineVal = line.replace(/.*(NOME|GIVEN)/, '').trim();
-          if (inlineVal.length > 2) {
-            nome = inlineVal;
-          } else if (cleanLines[i + 1]) {
-            nome = cleanLines[i + 1];
-          }
-        }
+      // Sesso (Logica CF)
+      if(cf) {
+        const giorno = parseInt(cf.substring(9, 11));
+        document.getElementById('fieldSesso').value = giorno > 40 ? 'F' : 'M';
       }
 
-      // Fallback: Se il Cognome non è stato trovato con le keyword, usa l'ordine sequenziale
-      // Nei documenti italiani il Cognome precede sempre il Nome
-      if (!cognome && nome) {
-        // Cerca la prima riga composta solo da lettere che precede il nome
-        const validTextLines = cleanLines.filter(l => /^[A-Z\s]{3,}$/.test(l) && !l.includes('REPUBBLICA') && !l.includes('ITALIANA') && !l.includes('CARTA'));
-        if (validTextLines.length >= 2) {
-          cognome = validTextLines[0];
+      // Luogo Nascita (Ricerca per parole chiave)
+      let luogo = "";
+      lines.forEach((l, i) => {
+        if(l.includes("LUOGO") || l.includes("COMUNE")) {
+          luogo = l.replace(/(LUOGO|COMUNE|DI|NASCITA)/g, "").trim();
         }
-      }
+      });
+      document.getElementById('fieldLuogoNascita').value = luogo;
 
-      document.getElementById('fieldCognome').value = cognome.replace(/[0-9]/g, '').trim();
-      document.getElementById('fieldNome').value = nome.replace(/[0-9]/g, '').trim();
-
-      // Tipo documento
-      if (fullText.includes('PATENTE')) {
-        document.getElementById('fieldTipo').value = 'Patente';
-      } else {
-        document.getElementById('fieldTipo').value = "Carta d'Identità";
-      }
+      // Nome/Cognome
+      lines.forEach((l, i) => {
+        if(l.includes("COGNOME")) document.getElementById('fieldCognome').value = lines[i+1] || "";
+        if(l.includes("NOME")) document.getElementById('fieldNome').value = lines[i+1] || "";
+      });
     }
 
-    // Salva i dati verificati su Supabase
+    // --- Salvataggio ---
     async function saveToSupabase() {
       const payload = {
         tipo_documento: document.getElementById('fieldTipo').value,
-        cognome: document.getElementById('fieldCognome').value || 'N/D',
-        nome: document.getElementById('fieldNome').value || 'N/D',
-        codice_fiscale: document.getElementById('fieldCF').value || 'N/D',
-        data_nascita: document.getElementById('fieldDataNascita').value || 'N/D'
+        cognome: document.getElementById('fieldCognome').value,
+        nome: document.getElementById('fieldNome').value,
+        codice_fiscale: document.getElementById('fieldCF').value,
+        data_nascita: document.getElementById('fieldDataNascita').value,
+        sesso: document.getElementById('fieldSesso').value,
+        luogo_nascita: document.getElementById('fieldLuogoNascita').value
       };
 
-      statusDiv.innerText = "Salvataggio in corso...";
-
       const { error } = await db.from('documenti').insert([payload]);
-
-      if (error) {
-        statusDiv.innerText = "Errore salvataggio: " + error.message;
-      } else {
-        statusDiv.innerText = "Documento salvato con successo!";
-        // Pulisci i campi
-        document.getElementById('fieldCognome').value = '';
-        document.getElementById('fieldNome').value = '';
-        document.getElementById('fieldCF').value = '';
-        document.getElementById('fieldDataNascita').value = '';
-        imageInput.value = '';
-        imagePreview.style.display = 'none';
-        
-        fetchDocumenti();
+      if(error) alert(error.message);
+      else {
+        alert("Salvato!");
+        fetchData();
       }
     }
 
-    // Caricamento Dati
-    async function fetchDocumenti() {
-      const tbody = document.getElementById('documentsTableBody');
-      tbody.innerHTML = '<tr><td colspan="6">Aggiornamento...</td></tr>';
-
-      const { data, error } = await db
-        .from('documenti')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        tbody.innerHTML = `<tr><td colspan="6">Errore: ${error.message}</td></tr>`;
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6">Nessun documento in archivio.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = data.map(doc => `
-        <tr>
-          <td>${new Date(doc.created_at).toLocaleString('it-IT')}</td>
-          <td>${doc.tipo_documento || '-'}</td>
-          <td><strong>${doc.cognome || '-'}</strong></td>
-          <td><strong>${doc.nome || '-'}</strong></td>
-          <td><code>${doc.codice_fiscale || '-'}</code></td>
-          <td>${doc.data_nascita || '-'}</td>
-        </tr>
+    // --- Caricamento Tabella ---
+    async function fetchData() {
+      const { data } = await db.from('documenti').select('*').order('created_at', { ascending: false });
+      document.getElementById('tableBody').innerHTML = data.map(d => `
+        <tr><td>${d.cognome} ${d.nome}</td><td>${d.codice_fiscale}</td><td>${d.sesso}</td><td>${d.data_nascita}</td></tr>
       `).join('');
     }
 
-    fetchDocumenti();
+    fetchData();
   </script>
 </body>
 </html>
