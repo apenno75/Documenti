@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scanner Documenti con OCR e Supabase</title>
+  
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Tesseract.js per OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; color: #333; }
+    .card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 20px; background-color: #fafafa; }
+    .btn { background: #0070f3; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #e0e0e0; padding: 10px; text-align: left; }
+    th { background-color: #f0f0f0; }
+    #status { margin-top: 10px; font-weight: bold; color: #555; }
+    .preview-img { max-width: 300px; max-height: 200px; display: block; margin-top: 10px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+  <h1>Scanner Documenti d'Identità</h1>
+
+  <!-- Sezione Scansione / Input -->
+  <div class="card">
+    <h2>1. Acquisisci Documento</h2>
+    <p>Seleziona o fotografa la Carta d'Identità o la Patente:</p>
+    <input type="file" id="imageInput" accept="image/*" capture="environment">
+    <br>
+    <img id="imagePreview" class="preview-img" style="display:none;" />
+    <br>
+    <button id="scanBtn" class="btn" onclick="processDocument()" disabled>Analizza e Salva</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- Sezione Tabella Dati -->
+  <div class="card">
+    <h2>2. Documenti Salvati</h2>
+    <button class="btn" onclick="fetchDocumenti()">Aggiorna Tabella</button>
+    <table>
+      <thead>
+        <tr>
+          <th>Data Inserimento</th>
+          <th>Tipo</th>
+          <th>Cognome</th>
+          <th>Nome</th>
+          <th>Codice Fiscale / Doc N.</th>
+          <th>Data di Nascita</th>
+        </tr>
+      </thead>
+      <tbody id="documentsTableBody">
+        <tr><td colspan="6">Caricamento in corso...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // --- Configurazione Supabase ---
+    const SUPABASE_URL = 'IL_TUO_SUPABASE_URL';
+    const SUPABASE_ANON_KEY = 'LA_TUA_SUPABASE_ANON_KEY';
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const imageInput = document.getElementById('imageInput');
+    const imagePreview = document.getElementById('imagePreview');
+    const scanBtn = document.getElementById('scanBtn');
+    const statusDiv = document.getElementById('status');
+
+    // Gestione Anteprima Immagine
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        imagePreview.src = URL.createObjectURL(file);
+        imagePreview.style.display = 'block';
+        scanBtn.disabled = false;
+        statusDiv.innerText = '';
+      }
+    });
+
+    // --- Elaborazione OCR e Parsing Dati ---
+    async function processDocument() {
+      const file = imageInput.files[0];
+      if (!file) return;
+
+      scanBtn.disabled = true;
+      statusDiv.innerText = "Lettura OCR in corso... Attendi...";
+
+      try {
+        // Esecuzione OCR con lingua Italiana
+        const { data: { text } } = await Tesseract.recognize(file, 'ita', {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              statusDiv.innerText = `Riconoscimento testo: ${Math.round(m.progress * 100)}%`;
+            }
+          }
+        });
+
+        statusDiv.innerText = "Estrazione dati ed elaborazione...";
+        
+        // Estrazione campi tramite Regex
+        const parsedData = parseOCRText(text);
+
+        statusDiv.innerText = "Salvataggio su Supabase...";
+
+        // Inserimento dati su Supabase
+        const { error } = await db.from('documenti').insert([parsedData]);
+
+        if (error) throw error;
+
+        statusDiv.innerText = "Documento salvato con successo!";
+        imageInput.value = '';
+        imagePreview.style.display = 'none';
+
+        // Ricarica la tabella
+        fetchDocumenti();
+
+      } catch (err) {
+        console.error(err);
+        statusDiv.innerText = "Errore durante l'elaborazione: " + err.message;
+      } finally {
+        scanBtn.disabled = false;
+      }
+    }
+
+    // --- Logica di Estrazione Testo (Parser Regex) ---
+    function parseOCRText(rawText) {
+      const text = rawText.toUpperCase();
+      
+      // Riconoscimento Codice Fiscale Italiano (16 caratteri alfanumerici)
+      const cfRegex = /[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/;
+      const cfMatch = text.match(cfRegex);
+
+      // Riconoscimento Data di Nascita (formati GG/MM/AAAA o GG.MM.AAAA)
+      const dateRegex = /\b(0[1-9]|[12][0-9]|3[01])[\/\.](0[1-9]|1[012])[\/\.](19|20)\d{2}\b/;
+      const dateMatch = text.match(dateRegex);
+
+      // Estrazione semplificata delle righe per Cognome e Nome
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+      
+      let cognome = "N/D";
+      let nome = "N/D";
+
+      // Cerca righe successive a etichette comuni
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes("COGNOME") && lines[i+1]) {
+          cognome = lines[i+1].replace(/[^A-Z\s]/g, '');
+        }
+        if (lines[i].includes("NOME") && lines[i+1]) {
+          nome = lines[i+1].replace(/[^A-Z\s]/g, '');
+        }
+      }
+
+      // Tipo documento indicativo
+      let tipo = "Sconosciuto";
+      if (text.includes("PATENTE") || text.includes("REPUBBLICA ITALIANA")) tipo = "Patente/Doc";
+      if (text.includes("CARTA") || text.includes("IDENTITA")) tipo = "Carta d'Identità";
+
+      return {
+        tipo_documento: tipo,
+        cognome: cognome !== "N/D" ? cognome : (lines[0] || "Da verificare"),
+        nome: nome !== "N/D" ? nome : (lines[1] || "Da verificare"),
+        codice_fiscale: cfMatch ? cfMatch[0] : "Non rilevato",
+        data_nascita: dateMatch ? dateMatch[0] : "Non rilevata"
+      };
+    }
+
+    // --- Lettura Dati da Supabase ---
+    async function fetchDocumenti() {
+      const tbody = document.getElementById('documentsTableBody');
+      tbody.innerHTML = '<tr><td colspan="6">Aggiornamento...</td></tr>';
+
+      const { data, error } = await db
+        .from('documenti')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        tbody.innerHTML = `<tr><td colspan="6">Errore nel caricamento: ${error.message}</td></tr>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6">Nessun documento registrato.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.map(doc => `
+        <tr>
+          <td>${new Date(doc.created_at).toLocaleString('it-IT')}</td>
+          <td>${doc.tipo_documento || '-'}</td>
+          <td><strong>${doc.cognome || '-'}</strong></td>
+          <td><strong>${doc.nome || '-'}</strong></td>
+          <td><code>${doc.codice_fiscale || '-'}</code></td>
+          <td>${doc.data_nascita || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Carica i dati all'avvio
+    fetchDocumenti();
+  </script>
+</body>
+</html>
